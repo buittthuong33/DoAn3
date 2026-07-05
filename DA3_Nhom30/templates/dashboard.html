@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống Giám sát Môi trường - Bảo mật đa tầng (Nhóm 30)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
+    <style>
+        :root {
+            /* Thay đổi các tông màu nền sáng sủa, trực quan hơn */
+            --primary-tech: #00b0ff;
+            --node1-color: #00c853;
+            --node2-color: #ff6d00;
+            --bg-cyber: #f0f4f8;          /* Màu nền chính sáng (Cyber-Light) */
+            --panel-bg: #ffffff;          /* Màu nền các panel trắng sáng */
+            --text-light: #2c3e50;        /* Đổi màu chữ sang màu tối để nổi bật trên nền sáng */
+            --alert-red: #d50000;
+            --alert-orange: #ffab00;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-cyber);
+            padding: 20px;
+            color: var(--text-light);
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+        }
+
+        /* Tối ưu thanh tiêu đề - Đưa trạng thái lên cùng một hàng ngang */
+        .main-header {
+            background: linear-gradient(135deg, #ffffff, #e3f2fd);
+            padding: 15px 25px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 176, 255, 0.2);
+            margin-bottom: 25px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header-title-block h1 {
+            margin: 0;
+            color: var(--primary-tech);
+            font-size: 1.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .security-badge-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .sec-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(0, 0, 0, 0.05);
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+
+        .badge-active {
+            background: rgba(0, 176, 255, 0.15);
+            color: var(--primary-tech);
+            border-color: var(--primary-tech);
+            box-shadow: 0 0 10px rgba(0, 176, 255, 0.1);
+        }
+
+        /* ===== TABS ===== */
+        .tabs-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-bottom: none;
+            color: #1565c0;
+            padding: 12px 26px;
+            border-radius: 12px 12px 0 0;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn:hover {
+            color: #000;
+            background: #fff;
+        }
+
+        .tab-btn.active[data-node="D01"] {
+            color: var(--node1-color);
+            background: rgba(0, 200, 83, 0.08);
+            border-color: var(--node1-color);
+            box-shadow: 0 -4px 12px rgba(0, 200, 83, 0.05);
+        }
+
+        .tab-btn.active[data-node="D02"] {
+            color: var(--node2-color);
+            background: rgba(255, 109, 0, 0.08);
+            border-color: var(--node2-color);
+            box-shadow: 0 -4px 12px rgba(255, 109, 0, 0.05);
+        }
+
+        .tab-status-dot {
+            font-size: 0.75rem;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Layout Trạm Node (dùng lại cho từng tab) */
+        .node-section {
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            margin-bottom: 25px;
+        }
+
+        .node-section.n1 { border-top: 4px solid var(--node1-color); }
+        .node-section.n2 { border-top: 4px solid var(--node2-color); }
+
+        .node-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 0;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .n1 .node-title { color: var(--node1-color); }
+        .n2 .node-title { color: var(--node2-color); }
+
+        .sensor-mini-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        @media (max-width: 800px) {
+            .sensor-mini-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        .sensor-card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+        }
+
+        .sensor-card h3 {
+            margin: 0 0 8px 0;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+
+        .data-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .panel-container {
+            background: var(--panel-bg);
+            padding: 25px;
+            border-radius: 16px;
+            margin-bottom: 25px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+
+        .panel-title {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: var(--primary-tech);
+            font-size: 1.2rem;
+            border-bottom: 1px solid #edf2f7;
+            padding-bottom: 10px;
+        }
+
+        .table-responsive {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--panel-bg);
+            color: #334155;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid #edf2f7;
+        }
+
+        th {
+            background: #f1f5f9;
+            color: var(--primary-tech);
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover { background: rgba(0, 0, 0, 0.01); }
+        .status-good { color: var(--node1-color); font-weight: bold; }
+        .status-warn { color: var(--alert-orange); font-weight: bold; }
+        .status-danger { color: var(--alert-red); font-weight: bold; animation: blinker 1.2s linear infinite; }
+
+        @keyframes blinker { 50% { opacity: 0.3; } }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <div class="main-header">
+            <div class="header-title-block">
+                <h1>Hệ thống Giám sát Bảo mật đa tầng</h1>
+                <div style="font-size: 0.85rem; color: #1565c0; margin-top: 4px;">HỆ THỐNG ĐANG PHÂN TÍCH: <span style="color: var(--node1-color); font-weight:bold;">D01</span> & <span style="color: var(--node2-color); font-weight:bold;">D02</span></div>
+            </div>
+
+            <div class="security-badge-container">
+                <div id="tls-badge" class="sec-badge badge-active">TRANSPORT: mTLS KÉP (PORT 8883)</div>
+                <div id="hmac-badge" class="sec-badge badge-active">INTEGRITY: HMAC-SHA256</div>
+                <div id="replay-badge" class="sec-badge badge-active">ANTI-REPLAY: NTP OK</div>
+            </div>
+        </div>
+
+        <div class="tabs-nav">
+            <button class="tab-btn active" data-node="D01" onclick="switchTab('D01')">
+                🟢 Trạm D01 <span class="tab-status-dot" id="tab-dot-D01">🔴</span>
+            </button>
+            <button class="tab-btn" data-node="D02" onclick="switchTab('D02')">
+                🟠 Trạm D02 <span class="tab-status-dot" id="tab-dot-D02">🔴</span>
+            </button>
+        </div>
+
+        <div class="tab-content active" id="tab-content-D01">
+            <div class="node-section n1">
+                <div class="node-title"><span>TRẠM THU THẬP: D01</span><span id="d01-status" style="font-size:0.85rem;">🔴 Offline</span></div>
+                <div class="sensor-mini-grid">
+                    <div class="sensor-card">
+                        <h3>Nhiệt độ</h3>
+                        <div class="data-value" id="d01-temp" style="color: #ff7043;">--°C</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Độ ẩm</h3>
+                        <div class="data-value" id="d01-hum" style="color: #29b6f6;">--%</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Khí Gas</h3>
+                        <div class="data-value" id="d01-gas" style="color: #fbc02d;">-- mV</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Ánh sáng</h3>
+                        <div class="data-value" id="d01-lux" style="color: #26a69a;">-- lx</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-bottom: 25px;">
+                <div class="panel-container" style="margin-bottom: 0;">
+                    <h2 class="panel-title">Nền đồ thị: Nhiệt độ & Độ ẩm - D01</h2>
+                    <canvas id="tempHumChart-D01" style="max-height: 320px;"></canvas>
+                </div>
+                <div class="panel-container" style="margin-bottom: 0;">
+                    <h2 class="panel-title">Đồ thị phân tích: Khí Gas & Ánh sáng - D01</h2>
+                    <canvas id="gasLuxChart-D01" style="max-height: 320px;"></canvas>
+                </div>
+            </div>
+
+            <div class="panel-container">
+                <h2 class="panel-title">🛡️ Nhật ký dữ liệu đã kiểm tra toàn vẹn - D01 (MySQL Workbench Verifier)</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Thời điểm hệ thống</th>
+                                <th>Mã trạm</th>
+                                <th>Nhiệt độ</th>
+                                <th>Độ ẩm</th>
+                                <th>Khí gas</th>
+                                <th>Ánh sáng</th>
+                                <th>An ninh đường truyền</th>
+                                <th>Trạng thái HMAC</th>
+                                <th>Trạng thái trạm</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mysql-rows-D01"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-content-D02">
+            <div class="node-section n2">
+                <div class="node-title"><span>TRẠM THU THẬP: D02</span><span id="d02-status" style="font-size:0.85rem;">🔴 Offline</span></div>
+                <div class="sensor-mini-grid">
+                    <div class="sensor-card">
+                        <h3>Nhiệt độ</h3>
+                        <div class="data-value" id="d02-temp" style="color: #ff7043;">--°C</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Độ ẩm</h3>
+                        <div class="data-value" id="d02-hum" style="color: #29b6f6;">--%</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Khí Gas</h3>
+                        <div class="data-value" id="d02-gas" style="color: #fbc02d;">-- mV</div>
+                    </div>
+                    <div class="sensor-card">
+                        <h3>Ánh sáng</h3>
+                        <div class="data-value" id="d02-lux" style="color: #26a69a;">-- lx</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-bottom: 25px;">
+                <div class="panel-container" style="margin-bottom: 0;">
+                    <h2 class="panel-title">Nền đồ thị: Nhiệt độ & Độ ẩm - D02</h2>
+                    <canvas id="tempHumChart-D02" style="max-height: 320px;"></canvas>
+                </div>
+                <div class="panel-container" style="margin-bottom: 0;">
+                    <h2 class="panel-title">Đồ thị phân tích: Khí Gas & Ánh sáng - D02</h2>
+                    <canvas id="gasLuxChart-D02" style="max-height: 320px;"></canvas>
+                </div>
+            </div>
+
+            <div class="panel-container">
+                <h2 class="panel-title">🛡️ Nhật ký dữ liệu đã kiểm tra toàn vẹn - D02 (MySQL Workbench Verifier)</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Thời điểm hệ thống</th>
+                                <th>Mã trạm</th>
+                                <th>Nhiệt độ</th>
+                                <th>Độ ẩm</th>
+                                <th>Khí gas</th>
+                                <th>Ánh sáng</th>
+                                <th>An ninh đường truyền</th>
+                                <th>Trạng thái HMAC</th>
+                                <th>Trạng thái trạm</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mysql-rows-D02"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+    let charts = { D01: { tempHum: null, gasLux: null }, D02: { tempHum: null, gasLux: null } };
+    let globalHistoryData = [];
+    let activeTab = "D01";
+
+    // Thiết lập tùy chọn mặc định cho Chart.js (đổi màu nhãn đồ thị sang màu xám tối phù hợp nền sáng)
+    Chart.defaults.color = '#475569';
+    Chart.defaults.borderColor = 'rgba(0, 0, 0, 0.05)';
+
+    // ===== Chuyển tab =====
+    function switchTab(node) {
+        activeTab = node;
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.node === node);
+        });
+        document.querySelectorAll('.tab-content').forEach(tc => {
+            tc.classList.toggle('active', tc.id === `tab-content-${node}`);
+        });
+        
+        // Gọi vẽ lại đồ thị để tránh lỗi hiển thị kích thước khi tab ẩn/hiện
+        if (charts[node].tempHum) charts[node].tempHum.resize();
+        if (charts[node].gasLux) charts[node].gasLux.resize();
+    }
+
+    // Khởi tạo đồ thị riêng cho từng node
+    function initChart() {
+        ["D01", "D02"].forEach(node => {
+            const color = node === "D01" ? "#ff7043" : "#ff1744";
+            const colorHum = node === "D01" ? "#29b6f6" : "#00e5ff";
+            const colorGas = node === "D01" ? "#ffb300" : "#ffea00";
+            const colorLux = node === "D01" ? "#26a69a" : "#00e676";
+
+            const ctx1 = document.getElementById(`tempHumChart-${node}`).getContext('2d');
+            charts[node].tempHum = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: `Nhiệt độ ${node} (°C)`, data: [], borderColor: color, backgroundColor: 'transparent', tension: 0.2 },
+                        { label: `Độ ẩm ${node} (%)`, data: [], borderColor: colorHum, backgroundColor: 'transparent', tension: 0.2 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#1e293b' } } },
+                    scales: {
+                        x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#475569' } },
+                        y: { min: 0, max: 100, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#475569' } }
+                    }
+                }
+            });
+
+            const ctx2 = document.getElementById(`gasLuxChart-${node}`).getContext('2d');
+            charts[node].gasLux = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: `Khí Gas ${node} (mV)`, data: [], borderColor: colorGas, backgroundColor: 'transparent', tension: 0.2 },
+                        { label: `Ánh sáng ${node} (lx)`, data: [], borderColor: colorLux, backgroundColor: 'transparent', tension: 0.2 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#1e293b' } } },
+                    scales: {
+                        x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#475569' } },
+                        y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#475569' } }
+                    }
+                }
+            });
+        });
+    }
+
+    function updateSecurityWidgets(newest) {
+        if (!newest) return;
+        const mode = newest.security_mode || "";
+        const hmac = newest.hmac_status || "";
+
+        const tlsBadge = document.getElementById('tls-badge');
+        if (mode.includes("TLS:ON")) {
+            tlsBadge.className = "sec-badge badge-active";
+            tlsBadge.innerText = "TRANSPORT: mTLS 2 CHIỀU (8883)";
+        } else {
+            tlsBadge.className = "sec-badge";
+            tlsBadge.innerText = "TRANSPORT: MQTT RAW";
+        }
+
+        const hmacBadge = document.getElementById('hmac-badge');
+        if (hmac === "valid") {
+            hmacBadge.className = "sec-badge badge-active";
+            hmacBadge.innerText = "INTEGRITY: HMAC-SHA256 (OK)";
+        } else {
+            hmacBadge.className = "sec-badge";
+            hmacBadge.innerText = "INTEGRITY: HMAC FAILED";
+        }
+    }
+
+    // Cập nhật giá trị lên Card và đồ thị độc lập từng node
+    function updateWidgetsAndChart() {
+        if (globalHistoryData.length === 0) return;
+
+        ["D01", "D02"].forEach(node => {
+            const nodePackets = globalHistoryData.filter(d => d.device_id === node);
+            
+            if (nodePackets.length > 0) {
+                const latest = nodePackets[0]; // Bản ghi mới nhất của Node này
+                const prefix = node.toLowerCase();
+
+                // Cập nhật trạng thái và thẻ thông số
+                document.getElementById(`${prefix}-status`).innerHTML = "🟢 Online";
+                document.getElementById(`${prefix}-status`).style.color = node === "D01" ? "var(--node1-color)" : "var(--node2-color)";
+                document.getElementById(`tab-dot-${node}`).innerText = "🟢";
+                document.getElementById(`${prefix}-temp`).innerText = parseFloat(latest.temperature).toFixed(1) + "°C";
+                document.getElementById(`${prefix}-hum`).innerText = parseInt(latest.humidity) + "%";
+                document.getElementById(`${prefix}-gas`).innerText = parseInt(latest.gas) + " mV";
+                document.getElementById(`${prefix}-lux`).innerText = parseFloat(latest.lux).toFixed(1) + " lx";
+
+                // Lấy tối đa 12 gói tin cũ để vẽ biểu đồ và đảo ngược chuỗi thời gian (từ cũ đến mới)
+                const chartData = nodePackets.slice(0, 12).reverse();
+                const timeLabels = chartData.map(d => d.created_at ? d.created_at.split(' ')[0] : "");
+
+                charts[node].tempHum.data.labels = timeLabels;
+                charts[node].tempHum.data.datasets[0].data = chartData.map(d => d.temperature);
+                charts[node].tempHum.data.datasets[1].data = chartData.map(d => d.humidity);
+                charts[node].tempHum.update();
+
+                charts[node].gasLux.data.labels = timeLabels;
+                charts[node].gasLux.data.datasets[0].data = chartData.map(d => d.gas);
+                charts[node].gasLux.data.datasets[1].data = chartData.map(d => d.lux);
+                charts[node].gasLux.update();
+            }
+        });
+
+        updateSecurityWidgets(globalHistoryData[0]);
+    }
+
+    function renderRowHTML(row) {
+        let alertText = '<span class="status-good">✔ An toàn</span>';
+        if (row.alert_status === 1 || row.alert_status === "WARNING") {
+            alertText = '<span class="status-warn">⚠ CẢNH BÁO</span>';
+        } else if (row.alert_status === 2 || row.alert_status === "DANGER") {
+            alertText = '<span class="status-danger">🚨 NGUY HIỂM</span>';
+        }
+        const hmacText = row.hmac_status === "valid" ? '<span class="status-good">Đã kiểm tra</span>' : '<span>Chưa kiểm tra</span>';
+        const nodeColor = row.device_id === "D01" ? "var(--node1-color)" : "var(--node2-color)";
+
+        return `
+            <tr>
+                <td>${row.created_at}</td>
+                <td style="font-weight:bold; color:${nodeColor};">${row.device_id}</td>
+                <td>${row.temperature}°C</td>
+                <td>${row.humidity}%</td>
+                <td>${row.gas} mV</td>
+                <td>${row.lux} lx</td>
+                <td>${row.security_mode}</td>
+                <td>${hmacText}</td>
+                <td>${alertText}</td>
+            </tr>
+        `;
+    }
+
+    function renderTable() {
+        ["D01", "D02"].forEach(node => {
+            const tbody = document.getElementById(`mysql-rows-${node}`);
+            const rows = globalHistoryData.filter(d => d.device_id === node).slice(0, 10);
+            tbody.innerHTML = rows.map(renderRowHTML).join('');
+        });
+    }
+
+    async function loadInitialDatabase() {
+        try {
+            const response = await fetch(`https://${window.location.hostname}:5000/api/latest`);
+            const data = await response.json();
+            if (data && !data.error) {
+                globalHistoryData = data;
+                updateWidgetsAndChart();
+                renderTable();
+            }
+        } catch (err) {
+            console.error("Không thể lấy dữ liệu gốc từ API:", err);
+        }
+    }
+
+    function setupRealtimeSocket() {
+        const socketUrl = `https://${window.location.hostname}:5000`;
+        const socket = io(socketUrl, {
+            auth: { token: "SecretWebToken123@@@" },
+            secure: true,
+            rejectUnauthorized: false,
+            transports: ['websocket', 'polling'], 
+            upgrade: true,                                        
+            reconnectionAttempts: Infinity,       
+            timeout: 10000
+        });
+
+        socket.on('connect', () => {
+            console.log("Kết nối WebSocket Realtime thành công!");
+        });
+
+        socket.on('thong_so_moi', (newPacket) => {
+            console.log("Nhận gói tin realtime mới:", newPacket);
+            globalHistoryData.unshift(newPacket);
+            
+            if (globalHistoryData.length > 50) globalHistoryData.pop(); 
+
+            updateWidgetsAndChart();
+            renderTable();
+        });
+    }
+
+    initChart();
+    setupRealtimeSocket();
+    loadInitialDatabase();
+</script>
+</body>
+</html>
