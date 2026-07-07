@@ -11,17 +11,14 @@ from flask import Flask, jsonify, render_template
 from flask_socketio import SocketIO
 from datetime import datetime
 
-# ==================== CONFIGURATION ====================
 MQTT_HOST = "10.236.127.128"
 MQTT_TOPIC = "iot/env"      
 
 ENABLE_TLS = True  
 ENABLE_HMAC = True
 
-# CẬP NHẬT: Đăng ký cả 2 thiết bị hợp lệ vào danh sách kiểm thử
 VALID_DEVICES = ["D01", "D02"]
 
-# ==================== BẢO MẬT TẦNG TRUYỀN TẢI (TLS) ====================
 if ENABLE_TLS:
     MQTT_PORT = 8883
 else:
@@ -46,15 +43,13 @@ HMAC_KEY_2 = bytes([
     0xD5, 0x5B, 0x8D, 0xFA, 0xC2, 0xF5, 0xF8, 0xD0
 ])
 
-# CẬP NHẬT: Tạo từ điển ánh xạ Device ID tới Key tương ứng để tự động hóa khi xác thực
 DEVICE_KEYS = {
     "D01": HMAC_KEY_1,
     "D02": HMAC_KEY_2
 }
 
-# ==================== 🛡️ ANTI-REPLAY CACHE (RAM) ====================
 hmac_cache = {}
-CACHE_WINDOW_SEC = 30  # Chuỗi HMAC sau 30s được tính là rác
+CACHE_WINDOW_SEC = 30 
 
 def clean_hmac_cache(current_server_ts):
     """Dọn dẹp RAM định kỳ: Xóa các mã HMAC đã lưu quá 30 giây"""
@@ -63,7 +58,6 @@ def clean_hmac_cache(current_server_ts):
     for k in expired_keys:
         del hmac_cache[k]
 
-# ==================== KHỞI TẠO FLASK & SOCKET.IO MỞ CỬA CORS ====================
 app = Flask(__name__)
 
 socketio = SocketIO(
@@ -82,7 +76,6 @@ def handle_connect(auth):
         return False 
     print("[🛡️ SECURITY] Kết nối WebSocket được CHẤP NHẬN thành công.")
 
-# ==================== ROUTING & LOGIC HTTP ====================
 @app.route('/', methods=['GET'])
 def index():
     return render_template('dashboard.html')
@@ -151,9 +144,7 @@ def on_message(client, userdata, msg):
         client_hmac = None
         server_ts = int(time.time()) 
 
-        # ==================== TÁCH GÓI TIN THEO CHẾ ĐỘ BẢO MẬT (ENABLE_HMAC) ====================
         if ENABLE_HMAC:
-            # Chế độ bảo mật: bắt buộc gói tin phải có "data" + "hmac"
             if "data" not in json_data or "hmac" not in json_data:
                 print("[⚠️ SECURITY]: Gói tin thiếu trường 'data'/'hmac' bắt buộc khi HMAC đang BẬT!")
                 return
@@ -167,19 +158,15 @@ def on_message(client, userdata, msg):
             else:
                 data_block = json.loads(data_str)
         else:
-            # Chế độ không bảo mật: nhận thẳng dữ liệu RAW, không cần data/hmac
             data_block = json_data
 
-        # 1. KIỂM TRA THIẾT BỊ HỢP LỆ TRƯỚC (Để lấy Key HMAC tương ứng)
         dev_id = data_block.get("d", "UNKNOWN")
         if dev_id not in VALID_DEVICES:
             save_log(dev_id, "UNKNOWN_DEVICE", "Thiết bị chưa được đăng ký")
             print(f"\n[⚠️ SECURITY]: Thiết bị không nhận diện được! ID: {dev_id}")
             return 
 
-        # ==================== XÁC THỰC TOÀN VẸN + CHỐNG PHÁT LẠI THEO CHỮ KÝ (ENABLE_HMAC) ====================
         if ENABLE_HMAC:
-            # Lấy đúng Key bí mật tương ứng của Node gửi lên dữ liệu
             current_key = DEVICE_KEYS[dev_id]
 
             server_calc_hmac = hmac.new(current_key, data_str.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -191,7 +178,6 @@ def on_message(client, userdata, msg):
             else:
                 print(f"\n[VERIFIED - {dev_id}] Kiểm tra tính toàn vẹn gói tin: HMAC OK")
 
-            # 🛡️ KIỂM TRA TRÙNG LẶP CHỮ KÝ TRONG VÒNG 30S (ANTI-REPLAY)
             if client_hmac in hmac_cache:
                 save_log(dev_id, "REPLAY_DUPLICATE", f"Phát hiện trùng chuỗi HMAC trong 30s từ {dev_id}")
                 print(f"[🚨 REPLAY DETECTED]: Node {dev_id} bị phát lại gói tin trong vòng 30s. HỦY!")
@@ -202,7 +188,6 @@ def on_message(client, userdata, msg):
         else:
             print(f"\n[INFO - {dev_id}] Chế độ nhận dữ liệu RAW (Không xác thực tầng ứng dụng)")
 
-        # 3. TRÍCH XUẤT CÁC THÔNG SỐ CẢM BIẾN VÀ LỌC GIÁ TRỊ NHIỄU BẤT THƯỜNG
         client_ts = int(data_block.get("ts", 0))
         temp = float(data_block.get("temp", 0))
         hum  = float(data_block.get("hum", 0))
@@ -214,7 +199,6 @@ def on_message(client, userdata, msg):
             save_log(dev_id, "SENSOR_ERROR", f"Cảm biến {dev_id} báo giá trị bất thường: T={temp}, H={hum}, Gas={gas}, Lux={lux}")
             return
 
-        # 4. CHỐNG TẤN CÔNG PHÁT LẠI SAU 30 GIÂY BẰNG LOGIC ĐỘ LỆCH THỜI GIAN (ENABLE_HMAC)
         if ENABLE_HMAC:
             time_delay = abs(server_ts - client_ts)
             if client_ts > 0 and time_delay > 30:
@@ -228,11 +212,9 @@ def on_message(client, userdata, msg):
         elif ale == 2:
             alert_status = "DANGER"
 
-        # sec_mode_str và hmac_status luôn phản ánh đúng trạng thái 2 cờ ENABLE_TLS/ENABLE_HMAC
         sec_mode_str = f"TLS:{'ON' if ENABLE_TLS else 'OFF'}|HMAC:{'ON' if ENABLE_HMAC else 'OFF'}"
         hmac_status_str = "valid" if ENABLE_HMAC else "none"
 
-        # 5. GHI DỮ LIỆU ĐÃ ĐƯỢC XÁC THỰC CỦA NODE VÀO MYSQL
         connection = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
         with connection.cursor() as cursor:
             sql = """
@@ -269,21 +251,18 @@ def on_message(client, userdata, msg):
             "created_at": readable_time,
             "timestamp": client_ts
         }
-        
-        # Đẩy dữ liệu Realtime lên giao diện Web thông qua luồng thread an toàn
+
         socketio.emit('thong_so_moi', web_packet)
         print(f"[⚡ REALTIME]: Đã đẩy dữ liệu đồng bộ thời gian từ {dev_id} lên Dashboard.")
 
     except Exception as e:
         print(f"[ERR] Lỗi phân tích gói tin: {str(e)}")
 
-# ==================== KÍCH HOẠT HỆ THỐNG GIAO DIỆN HTTPS ====================
 if __name__ == '__main__':
     mqtt_client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
 
-    # ==================== BẢO MẬT TẦNG TRUYỀN TẢI: mTLS (ENABLE_TLS) ====================
     if ENABLE_TLS:
         try:
             mqtt_client.tls_set(
@@ -303,14 +282,12 @@ if __name__ == '__main__':
     mqtt_client.loop_start() 
     print("[MQTT] Luồng thu thập MQTT chạy nền thành công.")
 
-    # ==================== BẢO MẬT TẦNG WEB: HTTPS (ENABLE_TLS) ====================
     if ENABLE_TLS:
         cert_path = "C:/mqtt_tls/server.crt"
         key_path  = "C:/mqtt_tls/server.key"
 
         print(f"[SERVER] Web Dashboard đang mở tại địa chỉ: https://localhost:5000")
 
-        # ---- Tự tạo socket SSL bằng eventlet, không để socketio.run tự xử lý ----
         import eventlet.wsgi
 
         listener = eventlet.listen(('0.0.0.0', 5000))
@@ -325,7 +302,6 @@ if __name__ == '__main__':
     else:
         print(f"[SERVER] Web Dashboard đang mở tại địa chỉ: http://localhost:5000")
 
-        # ---- Chạy HTTP thường (không SSL) khi tắt bảo mật ----
         import eventlet.wsgi
 
         listener = eventlet.listen(('0.0.0.0', 5000))
