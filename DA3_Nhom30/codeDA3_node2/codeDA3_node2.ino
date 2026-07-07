@@ -16,17 +16,13 @@
 #include "mbedtls/md.h"
 #include <time.h> 
 
-// ============================================================================
 //  CẤU HÌNH BẬT / TẮT BẢO MẬT 
-// ============================================================================
 #define ENABLE_TLS   1   
 #define ENABLE_HMAC  1   
 
-// --- Thong tin WiFi ---
 const char* WIFI_SSID     = "Nhóm 30";
 const char* WIFI_PASSWORD = "abcdefgh";
 
-// --- Thong tin MQTT Broker ---
 const char* MQTT_HOST     = "10.236.127.128";
 const char* MQTT_TOPIC    = "iot/env";      
 const char* DEVICE_ID     = "D02";            
@@ -39,7 +35,6 @@ const char* MQTT_PASSWORD = "D02_IOT_TLS_2026!@";
   const int MQTT_PORT = 1883; 
 #endif
 
-// --- Khoa bi mat HMAC ---
 const uint8_t HMAC_KEY[32] = {
 0x3E, 0x53, 0xCF, 0xD5, 0x3F, 0x0B, 0x1D, 0x93,
 0x25, 0xD6, 0xB2, 0x7A, 0xF9, 0x49, 0x9C, 0xFE, 
@@ -47,14 +42,11 @@ const uint8_t HMAC_KEY[32] = {
 0xD5, 0x5B, 0x8D, 0xFA, 0xC2, 0xF5, 0xF8, 0xD0
 };
 
-// --- Cam bien DHT11 ---
 #define DHT_PIN   4       
 #define DHT_TYPE  DHT11   
 
-// --- Cam bien khi gas MQ2 ---
 #define MQ2_PIN   34       
 
-// ================== NGUONG GIAM SAT ==================
 #define TEMP_WARNING   35
 #define TEMP_DANGER    40
 
@@ -72,13 +64,10 @@ const uint8_t HMAC_KEY[32] = {
 unsigned long lastMQTTConnectTime = 0; 
 #define MQTT_RECONNECT_INTERVAL_MS 10000
 
-// Biến quản lý thời gian thử lại kết nối WiFi (Tránh spam)
 unsigned long lastWiFiReconnectTime = 0;
 #define WIFI_RECONNECT_INTERVAL_MS 10000 
 
-// ============================================================================
 //  CHUNG CHÍ CA CỦA MQTT BROKER
-// ============================================================================
 #if ENABLE_TLS
 const char* CA_CERT = R"EOF(
 -----BEGIN CERTIFICATE-----
@@ -159,9 +148,6 @@ Y+6gqdmNat10U7I6x6bVoAA=
 )EOF";
 #endif
 
-// ============================================================================
-//  KHỞI TẠO ĐỐI TƯỢNG
-// ============================================================================
 DHT    dht(DHT_PIN, DHT_TYPE);
 BH1750 lightMeter;
 
@@ -175,9 +161,6 @@ BH1750 lightMeter;
 
 unsigned long lastSendTime = 0;
 
-// ============================================================================
-//  computeHMAC()
-// ============================================================================
 #if ENABLE_HMAC
 String computeHMAC(const String& message) {
   uint8_t result[32]; 
@@ -202,9 +185,6 @@ String computeHMAC(const String& message) {
 }
 #endif
 
-// ============================================================================
-//  readMQ2_Voltage()
-// ============================================================================
 float readMQ2_Voltage() {
   const int SAMPLES = 10;
   int readings[SAMPLES];
@@ -259,16 +239,13 @@ void readAndPublish() {
   int alertLevel = NORMAL;
   bool isGasAlert = false; 
 
-  // ===== NHIET DO =====
   if(temp >= TEMP_WARNING) alertLevel = WARNING;
   if(temp >= TEMP_DANGER) alertLevel = DANGER;
 
-  // ===== DO AM =====
   if(hum < HUM_LOW || hum > HUM_HIGH) {
       if(alertLevel < WARNING) alertLevel = WARNING;
   }
 
-  // ===== GAS =====
   if(gasVoltage >= GAS_WARNING) {
       isGasAlert = true;
       if(alertLevel < WARNING) alertLevel = WARNING;
@@ -277,7 +254,6 @@ void readAndPublish() {
       alertLevel = DANGER;
   }
 
-  // --- Doc cuong do anh sang ---
   float lux = lightMeter.readLightLevel();
   if(lux < LUX_LOW) {
     if(alertLevel < WARNING) alertLevel = WARNING;
@@ -348,9 +324,6 @@ void readAndPublish() {
   }
 }
 
-// ============================================================
-//  connectWiFi() & Dong bo gio NTP
-// ============================================================
 void connectWiFi() {
   Serial.print("\n[WiFi] Dang ket noi toi: " + String(WIFI_SSID));
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -387,9 +360,7 @@ void connectWiFi() {
   }
 }
 
-// ============================================================
-//  connectMQTT()
-// ============================================================
+
 bool connectMQTT() {
   Serial.printf("[PERF] Free Heap = %u bytes\n", ESP.getFreeHeap());
   if (mqttClient.connected()) return true;
@@ -438,20 +409,17 @@ void setup() {
 }
     
 void loop() {
-  // --- KHU VỰC SỬA ĐỔI CHÍNH: XỬ LÝ MẤT KẾT NỐI WIFI ---
   if (WiFi.status() != WL_CONNECTED) {
     unsigned long currentWiFiMillis = millis();
-    // Thay vì gọi WiFi.begin() liên tục, chỉ gọi lại sau mỗi 10 giây (WIFI_RECONNECT_INTERVAL_MS)
     if (currentWiFiMillis - lastWiFiReconnectTime >= WIFI_RECONNECT_INTERVAL_MS) {
       lastWiFiReconnectTime = currentWiFiMillis;
       Serial.println("\n[WiFi] Mat ket noi! Dang yeu cau tu dong ket noi lai...");
-      WiFi.disconnect(); // Ngắt hẳn trạng thái cũ 
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD); // Phát lệnh kết nối và để ESP32 tự xử lý ngầm
+      WiFi.disconnect(); 
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD); 
     }
-    return; // Thoát loop ngay, không chạy tiếp các lệnh MQTT phía dưới khi chưa có mạng
+    return;
   }
 
-  // --- XỬ LÝ MQTT ---
   if (mqttClient.connected()) {
     mqttClient.loop();
   } else {
@@ -462,7 +430,6 @@ void loop() {
     }
   }
 
-  // --- HẸN GIỜ ĐỌC VÀ GỬI DỮ LIỆU ---
   unsigned long now = millis();
   if (now - lastSendTime >= SEND_INTERVAL_MS) {
     lastSendTime = now; 
